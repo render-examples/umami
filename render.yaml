@@ -1,0 +1,51 @@
+# Umami on Render: one web service running the official Docker image, backed
+# by Render Postgres and Render Key Value (Redis-compatible). Umami creates its tables and runs migrations on startup,
+# so there is no build step and no persistent disk.
+projects:
+  - name: umami
+    environments:
+      - name: production
+        services:
+          - type: web
+            name: umami
+            runtime: image
+            image:
+              url: ghcr.io/umami-software/umami:3
+            plan: starter
+            region: oregon
+            healthCheckPath: /api/heartbeat
+            envVars:
+              - fromGroup: umami-settings
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: umami-db
+                  property: connectionString
+              - key: REDIS_URL
+                fromService:
+                  type: keyvalue
+                  name: umami-cache
+                  property: connectionString
+
+          # Umami uses Redis to cache database lookups and to store login tokens.
+          - type: keyvalue
+            name: umami-cache
+            plan: starter
+            region: oregon
+            maxmemoryPolicy: allkeys-lru
+            ipAllowList: [] # internal connections only
+
+        databases:
+          - name: umami-db
+            plan: basic-256mb
+            region: oregon
+            postgresMajorVersion: "17"
+            diskSizeGB: 5
+            ipAllowList: [] # internal connections only
+
+        envVarGroups:
+          - name: umami-settings
+            envVars:
+              # Signs login tokens and seeds anonymous session IDs. Changing it
+              # signs everyone out and resets session counts for the period.
+              - key: APP_SECRET
+                generateValue: true
